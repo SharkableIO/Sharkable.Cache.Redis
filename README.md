@@ -34,4 +34,4 @@ The `RateLimitStore` uses an atomic Lua script (`INCR` + conditional `EXPIRE`) f
 
 ## License
 
-MIT — [CharleyPeng](https://github.com/charleypeng)
+MIT

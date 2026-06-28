@@ -7,7 +7,7 @@
     <Version>0.1.0</Version>
     <PackageIcon>sharkable.jpg</PackageIcon>
     <PackageProjectUrl>https://sharkableio.github.io/</PackageProjectUrl>
-    <RepositoryUrl>https://github.com/charleypeng/Sharkable.Cache.Redis.git</RepositoryUrl>
+    <RepositoryUrl>https://github.com/SharkableIO/Sharkable.Cache.Redis.git</RepositoryUrl>
     <PackageTags>sharkable,redis,idempotency,rate-limiting,distributed-cache</PackageTags>
     <RepositoryType>git</RepositoryType>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
