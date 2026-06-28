@@ -36,6 +36,7 @@ public static class SharkableRedisExtensions
         services.AddSingleton(multiplexer);
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
         services.AddSingleton<IDistributedRateLimitStore, RedisRateLimitStore>();
+        services.AddSingleton<Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck, RedisHealthCheck>();
         return services;
     }
 

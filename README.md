@@ -25,10 +25,11 @@ builder.Services.AddShark(opt =>
 
 ## Stores
 
-| Store | Interface | Redis Key Pattern |
-|-------|-----------|-------------------|
+| Feature | Interface | Redis Key Pattern |
+|---------|-----------|-------------------|
 | Idempotency | `IIdempotencyStore` | `sharkable:idempotency:{key}` |
 | Rate limiting | `IDistributedRateLimitStore` | `sharkable:ratelimit:{key}` |
+| Health check | `IHealthCheck` | auto-registered via DI |
 
 The `RateLimitStore` uses an atomic Lua script (`INCR` + conditional `EXPIRE`) for correct distributed counting.
 

@@ -25,10 +25,13 @@ The `AddSharkableRedis()` call swaps the default in-memory stores for their Redi
 
 ### What it provides
 
-| Store | Interface | Redis impl |
-|-------|-----------|------------|
+| Feature | Interface | Redis impl |
+|---------|-----------|------------|
 | Idempotency | `IIdempotencyStore` | `RedisIdempotencyStore` |
 | Rate limiting | `IDistributedRateLimitStore` | `RedisRateLimitStore` |
+| Health check | `IHealthCheck` | `RedisHealthCheck` |
+
+The `RedisHealthCheck` is automatically registered. When `EnableHealthChecks = true`, `/healthz` includes Redis connectivity status, latency, and endpoint count.
 
 ### Overloads
 
