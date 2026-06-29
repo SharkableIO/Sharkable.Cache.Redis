@@ -3,8 +3,8 @@
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
     <Description>Redis-backed distributed stores for Sharkable — idempotency and rate limiting.</Description>
-    <AssemblyVersion>0.4.1</AssemblyVersion>
-    <Version>0.4.1</Version>
+    <AssemblyVersion>0.5.0</AssemblyVersion>
+    <Version>0.5.0</Version>
     <PackageIcon>sharkable.jpg</PackageIcon>
     <PackageProjectUrl>https://sharkableio.github.io/</PackageProjectUrl>
     <RepositoryUrl>https://github.com/SharkableIO/Sharkable.Cache.Redis.git</RepositoryUrl>
@@ -29,7 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(SharkablePath)" Condition="'$(SharkablePath)' != ''" />
-    <PackageReference Include="Sharkable" Version="0.4.0" Condition="'$(SharkablePath)' == ''" />
+    <PackageReference Include="Sharkable" Version="0.5.0" Condition="'$(SharkablePath)' == ''" />
   </ItemGroup>
 
   <ItemGroup>
