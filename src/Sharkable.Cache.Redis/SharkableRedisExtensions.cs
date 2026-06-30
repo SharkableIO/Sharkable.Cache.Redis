@@ -11,17 +11,18 @@ public static class SharkableRedisExtensions
 {
     /// <summary>
     /// Registers <see cref="IConnectionMultiplexer"/> (singleton) and
-    /// swaps the default <see cref="IIdempotencyStore"/> and
-    /// <see cref="IDistributedRateLimitStore"/> for their Redis-backed
-    /// implementations.
+    /// swaps the default stores for their Redis-backed implementations.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/>.</param>
     /// <param name="connectionString">Redis connection string (e.g. <c>"localhost:6379"</c>).</param>
+    /// <param name="configure">Optional callback to configure <see cref="RedisStoreOptions"/>.</param>
     public static IServiceCollection AddSharkableRedis(
-        this IServiceCollection services, string connectionString)
+        this IServiceCollection services,
+        string connectionString,
+        Action<RedisStoreOptions>? configure = null)
     {
         var multiplexer = ConnectionMultiplexer.Connect(connectionString);
-        return services.AddSharkableRedis(multiplexer);
+        return services.AddSharkableRedis(multiplexer, configure);
     }
 
     /// <summary>
@@ -30,10 +31,17 @@ public static class SharkableRedisExtensions
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/>.</param>
     /// <param name="multiplexer">A pre-configured <see cref="IConnectionMultiplexer"/>.</param>
+    /// <param name="configure">Optional callback to configure <see cref="RedisStoreOptions"/>.</param>
     public static IServiceCollection AddSharkableRedis(
-        this IServiceCollection services, IConnectionMultiplexer multiplexer)
+        this IServiceCollection services,
+        IConnectionMultiplexer multiplexer,
+        Action<RedisStoreOptions>? configure = null)
     {
+        var options = new RedisStoreOptions();
+        configure?.Invoke(options);
+
         services.AddSingleton(multiplexer);
+        services.AddSingleton(options);
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
         services.AddSingleton<IDistributedRateLimitStore, RedisRateLimitStore>();
         services.AddSingleton<Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck, RedisHealthCheck>();
@@ -49,10 +57,13 @@ public static class SharkableRedisExtensions
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/>.</param>
     /// <param name="configuration">Redis configuration options.</param>
+    /// <param name="configure">Optional callback to configure <see cref="RedisStoreOptions"/>.</param>
     public static IServiceCollection AddSharkableRedis(
-        this IServiceCollection services, ConfigurationOptions configuration)
+        this IServiceCollection services,
+        ConfigurationOptions configuration,
+        Action<RedisStoreOptions>? configure = null)
     {
         var multiplexer = ConnectionMultiplexer.Connect(configuration);
-        return services.AddSharkableRedis(multiplexer);
+        return services.AddSharkableRedis(multiplexer, configure);
     }
 }

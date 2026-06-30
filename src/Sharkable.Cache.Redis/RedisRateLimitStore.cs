@@ -10,8 +10,6 @@ namespace Sharkable.Cache.Redis;
 /// </summary>
 public sealed class RedisRateLimitStore : IDistributedRateLimitStore
 {
-    private const string KeyPrefix = "sharkable:ratelimit:";
-
     private const string IncrementScript = @"
 local count = redis.call('INCR', KEYS[1])
 if count == 1 then
@@ -20,20 +18,21 @@ end
 return count";
 
     private readonly IDatabase _db;
+    private readonly string _keyPrefix;
 
-    /// <summary>
-    /// Creates a new <see cref="RedisRateLimitStore"/> backed by the given
-    /// <see cref="IConnectionMultiplexer"/>.
-    /// </summary>
     public RedisRateLimitStore(IConnectionMultiplexer multiplexer)
+        : this(multiplexer, new RedisStoreOptions()) { }
+
+    public RedisRateLimitStore(IConnectionMultiplexer multiplexer, RedisStoreOptions options)
     {
-        _db = multiplexer.GetDatabase();
+        _db = multiplexer.GetDatabase(options.Database);
+        _keyPrefix = options.RateLimitKeyPrefix;
     }
 
     /// <inheritdoc />
     public async Task<long> IncrementAsync(string key, TimeSpan window)
     {
-        var redisKey = new RedisKey(KeyPrefix + key);
+        var redisKey = new RedisKey(_keyPrefix + key);
         var ttlSeconds = (long)Math.Ceiling(window.TotalSeconds);
         var result = await _db.ScriptEvaluateAsync(
             IncrementScript, new[] { redisKey }, new RedisValue[] { ttlSeconds });
@@ -43,6 +42,6 @@ return count";
     /// <inheritdoc />
     public async Task ResetAsync(string key)
     {
-        await _db.KeyDeleteAsync(KeyPrefix + key);
+        await _db.KeyDeleteAsync(_keyPrefix + key);
     }
 }

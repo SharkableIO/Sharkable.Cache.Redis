@@ -9,48 +9,47 @@ namespace Sharkable.Cache.Redis;
 /// </summary>
 public sealed class RedisSagaStore : ISagaStore
 {
-    private const string LockPrefix = "sharkable:saga:lock:";
-    private const string ProgressPrefix = "sharkable:saga:progress:";
-
     private readonly IDatabase _db;
+    private readonly string _lockPrefix;
+    private readonly string _progressPrefix;
 
     public RedisSagaStore(IConnectionMultiplexer multiplexer)
+        : this(multiplexer, new RedisStoreOptions()) { }
+
+    public RedisSagaStore(IConnectionMultiplexer multiplexer, RedisStoreOptions options)
     {
-        _db = multiplexer.GetDatabase();
+        _db = multiplexer.GetDatabase(options.Database);
+        _lockPrefix = options.SagaLockPrefix;
+        _progressPrefix = options.SagaProgressPrefix;
     }
 
-    /// <inheritdoc />
     public async Task<bool> TryAcquireLockAsync(string sagaId, TimeSpan ttl)
     {
         return await _db.StringSetAsync(
-            LockPrefix + sagaId, Environment.MachineName, ttl, When.NotExists);
+            _lockPrefix + sagaId, Environment.MachineName, ttl, When.NotExists);
     }
 
-    /// <inheritdoc />
     public Task ReleaseLockAsync(string sagaId)
     {
-        _db.KeyDelete(LockPrefix + sagaId);
+        _db.KeyDelete(_lockPrefix + sagaId);
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public async Task SaveProgressAsync(string sagaId, int stepIndex, CancellationToken ct)
     {
-        await _db.StringSetAsync(ProgressPrefix + sagaId, stepIndex);
+        await _db.StringSetAsync(_progressPrefix + sagaId, stepIndex);
     }
 
-    /// <inheritdoc />
     public async Task<int> LoadProgressAsync(string sagaId, CancellationToken ct)
     {
-        var val = await _db.StringGetAsync(ProgressPrefix + sagaId);
+        var val = await _db.StringGetAsync(_progressPrefix + sagaId);
         return val.HasValue ? (int)val : -1;
     }
 
-    /// <inheritdoc />
     public Task DeleteAsync(string sagaId, CancellationToken ct)
     {
-        _db.KeyDelete(ProgressPrefix + sagaId);
-        _db.KeyDelete(LockPrefix + sagaId);
+        _db.KeyDelete(_progressPrefix + sagaId);
+        _db.KeyDelete(_lockPrefix + sagaId);
         return Task.CompletedTask;
     }
 }
