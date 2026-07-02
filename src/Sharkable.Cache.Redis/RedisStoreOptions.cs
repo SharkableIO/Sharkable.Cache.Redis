@@ -53,4 +53,69 @@ public sealed class RedisStoreOptions
     /// higher than your slowest saga + retry budget. Default: 7 days.
     /// </summary>
     public TimeSpan SagaProgressTtl { get; set; } = TimeSpan.FromDays(7);
+
+    /// <summary>
+    /// Validates all key-prefix properties in this instance. Called by
+    /// <c>AddSharkableRedis</c> after the configuration callback runs so that
+    /// malformed prefixes fail at startup with a clear error rather than
+    /// silently producing collision-prone keys at runtime.
+    /// </summary>
+    /// <exception cref="ArgumentException">
+    /// Thrown when any prefix is empty, contains characters outside
+    /// <c>[A-Za-z0-9:_-]</c>, or — for true namespace prefixes — does not
+    /// terminate with <c>:</c> (which can cause prefix collisions like
+    /// <c>"sharkable:saga"</c> vs <c>"sharkable:saga:lock"</c>).
+    /// </exception>
+    internal void ValidatePrefixes()
+    {
+        ValidateKeyPrefix(nameof(IdempotencyKeyPrefix), IdempotencyKeyPrefix);
+        ValidateKeyPrefix(nameof(RateLimitKeyPrefix), RateLimitKeyPrefix);
+        ValidateKeyPrefix(nameof(SagaLockPrefix), SagaLockPrefix);
+        ValidateKeyPrefix(nameof(SagaProgressPrefix), SagaProgressPrefix);
+        ValidateKeyPrefix(nameof(CronLockPrefix), CronLockPrefix);
+        ValidateKeyPrefix(nameof(CronStateKey), CronStateKey, requireTrailingColon: false);
+    }
+
+    /// <summary>
+    /// Validates a single key prefix.
+    /// </summary>
+    /// <param name="propertyName">Caller <c>nameof</c> for the error message.</param>
+    /// <param name="prefix">The prefix value to validate.</param>
+    /// <param name="requireTrailingColon">
+    /// When <c>true</c> (default for namespace prefixes), the value must end
+    /// with <c>:</c> so it cannot collide with a longer prefix that happens
+    /// to share a leading substring.
+    /// </param>
+    private static void ValidateKeyPrefix(string propertyName, string prefix, bool requireTrailingColon = true)
+    {
+        if (string.IsNullOrEmpty(prefix))
+        {
+            throw new ArgumentException(
+                $"{propertyName} must be non-empty; an empty prefix collides across tenants and applications sharing the same Redis instance.",
+                propertyName);
+        }
+
+        for (var i = 0; i < prefix.Length; i++)
+        {
+            var c = prefix[i];
+            var isAllowed =
+                (c >= 'A' && c <= 'Z') ||
+                (c >= 'a' && c <= 'z') ||
+                (c >= '0' && c <= '9') ||
+                c == ':' || c == '_' || c == '-';
+            if (!isAllowed)
+            {
+                throw new ArgumentException(
+                    $"{propertyName} contains invalid character '{c}' at index {i}; only [A-Za-z0-9:_-] are allowed.",
+                    propertyName);
+            }
+        }
+
+        if (requireTrailingColon && prefix[^1] != ':')
+        {
+            throw new ArgumentException(
+                $"{propertyName} must terminate with ':' to prevent prefix collisions like 'sharkable:saga' vs 'sharkable:saga:lock'.",
+                propertyName);
+        }
+    }
 }

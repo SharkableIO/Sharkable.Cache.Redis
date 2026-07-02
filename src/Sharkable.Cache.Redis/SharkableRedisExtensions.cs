@@ -89,6 +89,7 @@ public static class SharkableRedisExtensions
     {
         var options = new RedisStoreOptions();
         configure?.Invoke(options);
+        options.ValidatePrefixes();
 
         services.AddSingleton(multiplexer);
         services.AddSingleton(options);
