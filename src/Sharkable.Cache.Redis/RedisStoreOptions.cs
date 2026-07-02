@@ -24,8 +24,20 @@ public sealed class RedisStoreOptions
     /// <summary>Redis hash key for cron job states. Default: <c>"sharkable:cron:states"</c>.</summary>
     public string CronStateKey { get; set; } = "sharkable:cron:states";
 
-    /// <summary>Redis database number. Default: <c>-1</c> (default database).</summary>
-    public int Database { get; set; } = -1;
+    private int _database = -1;
+
+    /// <summary>
+    /// Redis database number. <c>-1</c> means "use the multiplexer's default DB".
+    /// Values outside <c>[-1, 15]</c> are silently clamped to the nearest valid value
+    /// (Redis ships with 16 logical databases, <c>0..15</c>); passing
+    /// <c>1000</c> previously crashed on the first command via
+    /// <c>multiplexer.GetDatabase(1000)</c>.
+    /// </summary>
+    public int Database
+    {
+        get => _database;
+        set => _database = value < -1 ? -1 : (value > 15 ? 15 : value);
+    }
 
     /// <summary>
     /// When <c>true</c>, the Redis connection MUST use TLS. If the supplied
