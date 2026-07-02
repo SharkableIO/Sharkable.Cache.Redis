@@ -26,6 +26,11 @@ public static class SharkableRedisExtensions
     /// of crashing the host when Redis is briefly unavailable at startup.
     /// Set <see cref="RedisStoreOptions.RequireTls"/> in <paramref name="configure"/>
     /// to enforce TLS (<c>ssl=true</c>) on the resulting connection.
+    /// <para>
+    /// To surface the Redis health check on the public <c>/healthz</c> endpoint,
+    /// call <c>UseSharkableRedisHealthCheck()</c> explicitly after this method.
+    /// It is not auto-wired — consumers opt in.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharkableRedis(
         this IServiceCollection services,
@@ -71,6 +76,11 @@ public static class SharkableRedisExtensions
     /// <param name="services">The <see cref="IServiceCollection"/>.</param>
     /// <param name="multiplexer">A pre-configured <see cref="IConnectionMultiplexer"/>.</param>
     /// <param name="configure">Optional callback to configure <see cref="RedisStoreOptions"/>.</param>
+    /// <remarks>
+    /// To surface the Redis health check on the public <c>/healthz</c> endpoint,
+    /// call <c>UseSharkableRedisHealthCheck()</c> explicitly after this method.
+    /// It is not auto-wired — consumers opt in.
+    /// </remarks>
     public static IServiceCollection AddSharkableRedis(
         this IServiceCollection services,
         IConnectionMultiplexer multiplexer,
@@ -83,7 +93,6 @@ public static class SharkableRedisExtensions
         services.AddSingleton(options);
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
         services.AddSingleton<IDistributedRateLimitStore, RedisRateLimitStore>();
-        services.AddSingleton<Microsoft.Extensions.Diagnostics.HealthChecks.IHealthCheck, RedisHealthCheck>();
         services.AddSingleton<ISagaStore, RedisSagaStore>();
         services.AddSingleton<ICronJobStore, RedisCronJobStore>();
         return services;
