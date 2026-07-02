@@ -66,10 +66,20 @@ public sealed class RedisCronJobStore : ICronJobStore
     /// now held by another instance.
     /// </summary>
     /// <param name="jobName">Unique cron job identifier.</param>
-    /// <param name="ttl">Lock time-to-live.</param>
+    /// <param name="ttl">Lock time-to-live. Must be positive.</param>
     /// <returns><c>true</c> if the lock was acquired; <c>false</c> otherwise.</returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="ttl"/> is zero or negative.
+    /// </exception>
     public async Task<bool> TryAcquireJobLockAsync(string jobName, TimeSpan ttl)
     {
+        if (ttl <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ttl),
+                "Cron lock TTL must be positive; a zero TTL would make acquisition always fail (EX 0 deletes the key).");
+        }
+
         var token = Guid.NewGuid().ToString("N");
         var acquired = await _db.StringSetAsync(
             _lockPrefix + jobName, token, ttl, When.NotExists);

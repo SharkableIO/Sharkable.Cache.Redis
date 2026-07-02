@@ -62,9 +62,21 @@ public sealed class RedisSagaStore : ISagaStore
     /// local token entry expires (because the holder never renewed or
     /// released), subsequent release/renew calls become no-ops; the caller
     /// should treat this as "lock no longer owned by this process".
+    /// <para>
+    /// Rejects non-positive <paramref name="ttl"/> because <c>SET key value EX 0 NX</c>
+    /// always fails in Redis (a zero TTL deletes the key immediately), so the
+    /// lock would never be acquired and the saga would block forever.
+    /// </para>
     /// </remarks>
     public async Task<bool> TryAcquireLockAsync(string sagaId, TimeSpan ttl)
     {
+        if (ttl <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(ttl),
+                "Saga lock TTL must be positive; a zero TTL would make acquisition always fail (EX 0 deletes the key).");
+        }
+
         var token = Guid.NewGuid().ToString("N");
         var acquired = await _db.StringSetAsync(
             _lockPrefix + sagaId, token, ttl, When.NotExists);
@@ -82,7 +94,8 @@ public sealed class RedisSagaStore : ISagaStore
     /// another instance, the local token record is cleared so subsequent
     /// release/renew calls become no-ops. <see cref="MemoryCache.Get"/> also
     /// resets the sliding expiration on the token entry so a frequently
-    /// renewed saga never loses its token.
+    /// renewed saga never loses its token. Non-positive <paramref name="ttl"/>
+    /// is silently treated as a no-op to match the documented contract.
     /// </remarks>
     public async Task RenewLockAsync(string sagaId, TimeSpan ttl)
     {
