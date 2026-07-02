@@ -21,7 +21,17 @@ public sealed class RedisStoreOptions
     /// <summary>Key prefix for cron job distributed locks. Default: <c>"sharkable:cron:lock:"</c>.</summary>
     public string CronLockPrefix { get; set; } = "sharkable:cron:lock:";
 
-    /// <summary>Redis hash key for cron job states. Default: <c>"sharkable:cron:states"</c>.</summary>
+    /// <summary>
+    /// Redis hash key for cron job states. Default: <c>"sharkable:cron:states"</c>.
+    /// <para>
+    /// <b>Multi-tenant deployments:</b> the default value is a single shared
+    /// key for all tenants on the same Redis instance. To shard per-tenant,
+    /// set this to a tenant-scoped value (e.g.
+    /// <c>"sharkable:cron:states:tenant-{tenantId}"</c>) inside the
+    /// <c>configure</c> callback of <c>AddSharkableRedis</c>. The same
+    /// constraint applies to all other prefix properties on this class.
+    /// </para>
+    /// </summary>
     public string CronStateKey { get; set; } = "sharkable:cron:states";
 
     private int _database = -1;
