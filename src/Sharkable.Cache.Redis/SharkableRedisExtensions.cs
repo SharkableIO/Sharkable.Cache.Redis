@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
@@ -81,6 +82,13 @@ public static class SharkableRedisExtensions
     /// To surface the Redis health check on the public <c>/healthz</c> endpoint,
     /// call <c>UseSharkableRedisHealthCheck()</c> explicitly after this method.
     /// It is not auto-wired — consumers opt in.
+    /// <para>
+    /// The <see cref="IConnectionMultiplexer"/> is registered as a singleton
+    /// against the interface and owned by <see cref="RedisMultiplexerDisposalService"/>,
+    /// which calls <see cref="IAsyncDisposable.DisposeAsync"/> on host stop so
+    /// in-flight commands drain gracefully. Without this, DI's default sync
+    /// disposal would force-close pending socket writes during shutdown.
+    /// </para>
     /// </remarks>
     public static IServiceCollection AddSharkableRedis(
         this IServiceCollection services,
@@ -91,7 +99,9 @@ public static class SharkableRedisExtensions
         configure?.Invoke(options);
         options.ValidatePrefixes();
 
-        services.AddSingleton(multiplexer);
+        services.AddSingleton<IConnectionMultiplexer>(_ => multiplexer);
+        services.AddSingleton<RedisMultiplexerDisposalService>();
+        services.AddHostedService(sp => sp.GetRequiredService<RedisMultiplexerDisposalService>());
         services.AddSingleton(options);
         services.AddSingleton<IIdempotencyStore, RedisIdempotencyStore>();
         services.AddSingleton<IDistributedRateLimitStore, RedisRateLimitStore>();
