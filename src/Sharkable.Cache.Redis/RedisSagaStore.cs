@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+using Microsoft.Extensions.Caching.Memory;
 using StackExchange.Redis;
 
 namespace Sharkable.Cache.Redis;
@@ -21,11 +21,24 @@ public sealed class RedisSagaStore : ISagaStore
         "return redis.call('PEXPIRE', @key, @ttlMs) " +
         "else return 0 end");
 
+    /// <summary>
+    /// In-process cache of fencing tokens keyed by <c>sagaId</c>. Bounded
+    /// (<see cref="MemoryCacheOptions.SizeLimit"/>) with sliding expiration
+    /// equal to <c>LockTtl * 3</c> so a token whose holder crashes without
+    /// releasing is reclaimed automatically, preventing unbounded growth
+    /// for crash-recovery sagaIds. The Redis-side TTL remains the source of
+    /// truth for lock validity; this cache only exists so that the local
+    /// process can prove ownership before calling <see cref="LockReleaseScript"/>
+    /// or <see cref="LockRenewScript"/>.
+    /// </summary>
+    private static readonly MemoryCache _lockTokens = new(new MemoryCacheOptions
+    {
+        SizeLimit = 10_000,
+    });
+
     private readonly IDatabase _db;
     private readonly string _lockPrefix;
     private readonly string _progressPrefix;
-
-    private readonly ConcurrentDictionary<string, string> _lockTokens = new();
 
     public RedisSagaStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions()) { }
@@ -40,9 +53,13 @@ public sealed class RedisSagaStore : ISagaStore
     /// <inheritdoc />
     /// <remarks>
     /// Generates a fresh per-acquire <see cref="Guid"/> as the fencing token
-    /// and stores it locally. Release and renewal only act on the lock if the
+    /// and stores it in the local token cache with sliding expiration
+    /// <c>ttl * 3</c>. Release and renewal only act on the lock if the
     /// stored token still matches, preventing split-brain when the lock TTL
-    /// expires mid-work and another instance acquires the same key.
+    /// expires mid-work and another instance acquires the same key. If the
+    /// local token entry expires (because the holder never renewed or
+    /// released), subsequent release/renew calls become no-ops; the caller
+    /// should treat this as "lock no longer owned by this process".
     /// </remarks>
     public async Task<bool> TryAcquireLockAsync(string sagaId, TimeSpan ttl)
     {
@@ -51,7 +68,7 @@ public sealed class RedisSagaStore : ISagaStore
             _lockPrefix + sagaId, token, ttl, When.NotExists);
         if (acquired)
         {
-            _lockTokens[sagaId] = token;
+            SetToken(_lockPrefix + sagaId, token, ttl);
         }
         return acquired;
     }
@@ -61,11 +78,14 @@ public sealed class RedisSagaStore : ISagaStore
     /// Atomically extends the lock TTL only if the stored value still matches
     /// the token captured at acquire time. If the lock has been taken over by
     /// another instance, the local token record is cleared so subsequent
-    /// release/renew calls become no-ops.
+    /// release/renew calls become no-ops. <see cref="MemoryCache.Get"/> also
+    /// resets the sliding expiration on the token entry so a frequently
+    /// renewed saga never loses its token.
     /// </remarks>
     public async Task RenewLockAsync(string sagaId, TimeSpan ttl)
     {
-        if (!_lockTokens.TryGetValue(sagaId, out var token))
+        var token = GetToken(_lockPrefix + sagaId);
+        if (token is null)
         {
             return;
         }
@@ -82,7 +102,7 @@ public sealed class RedisSagaStore : ISagaStore
 
         if ((long)result == 0)
         {
-            _lockTokens.TryRemove(sagaId, out _);
+            _lockTokens.Remove(_lockPrefix + sagaId);
         }
     }
 
@@ -95,14 +115,14 @@ public sealed class RedisSagaStore : ISagaStore
     /// </remarks>
     public async Task ReleaseLockAsync(string sagaId)
     {
-        if (!_lockTokens.TryRemove(sagaId, out var token))
+        if (_lockTokens.TryGetValue(_lockPrefix + sagaId, out var cached) && cached is string token)
         {
-            return;
-        }
+            _lockTokens.Remove(_lockPrefix + sagaId);
 
-        await _db.ScriptEvaluateAsync(
-            LockReleaseScript,
-            new { key = (RedisKey)(_lockPrefix + sagaId), token = (RedisValue)token });
+            await _db.ScriptEvaluateAsync(
+                LockReleaseScript,
+                new { key = (RedisKey)(_lockPrefix + sagaId), token = (RedisValue)token });
+        }
     }
 
     /// <inheritdoc />
@@ -127,7 +147,12 @@ public sealed class RedisSagaStore : ISagaStore
     /// </remarks>
     public async Task DeleteAsync(string sagaId, CancellationToken ct)
     {
-        var token = _lockTokens.TryRemove(sagaId, out var t) ? t : null;
+        string? token = null;
+        if (_lockTokens.TryGetValue(_lockPrefix + sagaId, out var cached) && cached is string t)
+        {
+            token = t;
+            _lockTokens.Remove(_lockPrefix + sagaId);
+        }
 
         Task lockTask;
         if (token is not null)
@@ -145,4 +170,27 @@ public sealed class RedisSagaStore : ISagaStore
             _db.KeyDeleteAsync(_progressPrefix + sagaId),
             lockTask);
     }
+
+    /// <summary>
+    /// Stores <paramref name="token"/> under <paramref name="key"/> with
+    /// sliding expiration <c>ttl * 3</c> so that callers that renew or
+    /// release the lock keep the entry alive, while a crashed holder's
+    /// token is reclaimed automatically.
+    /// </summary>
+    private static void SetToken(string key, string token, TimeSpan ttl)
+    {
+        using var entry = _lockTokens.CreateEntry(key);
+        entry.SlidingExpiration = TimeSpan.FromTicks(Math.Max(ttl.Ticks, 1) * 3);
+        entry.Size = 1;
+        entry.Value = token;
+    }
+
+    /// <summary>
+    /// Looks up the locally-captured fencing token for <paramref name="key"/>.
+    /// <see cref="MemoryCache.TryGetValue"/> also resets the sliding
+    /// expiration, so a frequently renewed or released saga never loses
+    /// its token to the size-bound eviction policy.
+    /// </summary>
+    private static string? GetToken(string key) =>
+        _lockTokens.TryGetValue(key, out var v) ? v as string : null;
 }
