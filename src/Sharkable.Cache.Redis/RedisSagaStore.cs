@@ -39,6 +39,7 @@ public sealed class RedisSagaStore : ISagaStore
     private readonly IDatabase _db;
     private readonly string _lockPrefix;
     private readonly string _progressPrefix;
+    private readonly TimeSpan _progressTtl;
 
     public RedisSagaStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions()) { }
@@ -48,6 +49,7 @@ public sealed class RedisSagaStore : ISagaStore
         _db = multiplexer.GetDatabase(options.Database);
         _lockPrefix = options.SagaLockPrefix;
         _progressPrefix = options.SagaProgressPrefix;
+        _progressTtl = options.SagaProgressTtl;
     }
 
     /// <inheritdoc />
@@ -126,9 +128,15 @@ public sealed class RedisSagaStore : ISagaStore
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// The progress record is written with a TTL of <see cref="RedisStoreOptions.SagaProgressTtl"/>
+    /// (default 7 days) so a host crash that orphans the saga cannot leak
+    /// Redis keys indefinitely. Configure this higher than your slowest
+    /// expected saga duration plus retry budget.
+    /// </remarks>
     public async Task SaveProgressAsync(string sagaId, int stepIndex, CancellationToken ct)
     {
-        await _db.StringSetAsync(_progressPrefix + sagaId, stepIndex);
+        await _db.StringSetAsync(_progressPrefix + sagaId, stepIndex, _progressTtl);
     }
 
     /// <inheritdoc />

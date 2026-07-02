@@ -34,4 +34,11 @@ public sealed class RedisStoreOptions
     /// Default: <c>false</c>.
     /// </summary>
     public bool RequireTls { get; set; }
+
+    /// <summary>
+    /// TTL applied to saga progress records (<c>sharkable:saga:progress:&lt;id&gt;</c>).
+    /// After this window an in-flight saga's progress is lost; configure
+    /// higher than your slowest saga + retry budget. Default: 7 days.
+    /// </summary>
+    public TimeSpan SagaProgressTtl { get; set; } = TimeSpan.FromDays(7);
 }
