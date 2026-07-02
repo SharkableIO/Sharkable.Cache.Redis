@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Sharkable.Cache.Redis;
@@ -14,14 +15,52 @@ public static class SharkableRedisExtensions
     /// swaps the default stores for their Redis-backed implementations.
     /// </summary>
     /// <param name="services">The <see cref="IServiceCollection"/>.</param>
-    /// <param name="connectionString">Redis connection string (e.g. <c>"localhost:6379"</c>).</param>
+    /// <param name="connectionString">Redis connection string (e.g. <c>"localhost:6379"</c>). Required.</param>
     /// <param name="configure">Optional callback to configure <see cref="RedisStoreOptions"/>.</param>
+    /// <exception cref="ArgumentException">
+    /// Thrown when <paramref name="connectionString"/> is null or whitespace.
+    /// </exception>
+    /// <remarks>
+    /// Defaults applied if not present in the connection string:
+    /// <c>abortConnect=false</c> so the multiplexer keeps reconnecting instead
+    /// of crashing the host when Redis is briefly unavailable at startup.
+    /// Set <see cref="RedisStoreOptions.RequireTls"/> in <paramref name="configure"/>
+    /// to enforce TLS (<c>ssl=true</c>) on the resulting connection.
+    /// </remarks>
     public static IServiceCollection AddSharkableRedis(
         this IServiceCollection services,
         string connectionString,
         Action<RedisStoreOptions>? configure = null)
     {
-        var multiplexer = ConnectionMultiplexer.Connect(connectionString);
+        if (string.IsNullOrWhiteSpace(connectionString))
+        {
+            throw new ArgumentException(
+                "Redis connection string is required.", nameof(connectionString));
+        }
+
+        var options = new RedisStoreOptions();
+        configure?.Invoke(options);
+
+        var config = ConfigurationOptions.Parse(connectionString);
+
+        var hadAbortConnect = config.AbortOnConnectFail;
+        var hadSsl = config.Ssl;
+        if (hadAbortConnect)
+        {
+            config.AbortOnConnectFail = false;
+        }
+        if (options.RequireTls && !hadSsl)
+        {
+            config.Ssl = true;
+        }
+
+        var loggerFactory = services.BuildServiceProvider().GetService<ILoggerFactory>();
+        var logger = loggerFactory?.CreateLogger("Sharkable.Cache.Redis.AddSharkableRedis");
+        logger?.LogInformation(
+            "Connecting to Redis (abortConnect={Abort}, ssl={Ssl}, requireTls={RequireTls}).",
+            !hadAbortConnect, config.Ssl, options.RequireTls);
+
+        var multiplexer = ConnectionMultiplexer.Connect(config);
         return services.AddSharkableRedis(multiplexer, configure);
     }
 
@@ -63,6 +102,11 @@ public static class SharkableRedisExtensions
         ConfigurationOptions configuration,
         Action<RedisStoreOptions>? configure = null)
     {
+        if (configuration is null)
+        {
+            throw new ArgumentNullException(nameof(configuration));
+        }
+
         var multiplexer = ConnectionMultiplexer.Connect(configuration);
         return services.AddSharkableRedis(multiplexer, configure);
     }

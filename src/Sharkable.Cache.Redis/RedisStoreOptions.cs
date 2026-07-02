@@ -26,4 +26,12 @@ public sealed class RedisStoreOptions
 
     /// <summary>Redis database number. Default: <c>-1</c> (default database).</summary>
     public int Database { get; set; } = -1;
+
+    /// <summary>
+    /// When <c>true</c>, the Redis connection MUST use TLS. If the supplied
+    /// connection string does not already specify <c>ssl=true</c>, the
+    /// configuration is upgraded to require TLS before connecting.
+    /// Default: <c>false</c>.
+    /// </summary>
+    public bool RequireTls { get; set; }
 }
