@@ -21,12 +21,6 @@ public sealed class RedisCronJobStore : ICronJobStore
         "return redis.call('PEXPIRE', @key, @ttlMs) " +
         "else return 0 end");
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
     /// <summary>
     /// In-process cache of fencing tokens keyed by <c>jobName</c>. Bounded
     /// (<see cref="MemoryCacheOptions.SizeLimit"/>) with sliding expiration
@@ -152,7 +146,7 @@ public sealed class RedisCronJobStore : ICronJobStore
     /// </summary>
     public async Task SaveStateAsync(string jobName, CronJobState state)
     {
-        var json = JsonSerializer.Serialize(state, JsonOptions);
+        var json = JsonSerializer.Serialize(state, CacheRedisJsonContext.Default.CronJobState);
         var batch = _db.CreateBatch();
         var hashTask = batch.HashSetAsync(_stateKey, jobName, json);
         var expireTask = batch.KeyExpireAsync(_stateKey, _stateTtl);
@@ -164,7 +158,7 @@ public sealed class RedisCronJobStore : ICronJobStore
     {
         var json = await _db.HashGetAsync(_stateKey, jobName);
         return json.HasValue
-            ? JsonSerializer.Deserialize<CronJobState>(json.ToString(), JsonOptions)
+            ? JsonSerializer.Deserialize(json.ToString(), CacheRedisJsonContext.Default.CronJobState)
             : null;
     }
 
@@ -173,7 +167,7 @@ public sealed class RedisCronJobStore : ICronJobStore
         var entries = await _db.HashGetAllAsync(_stateKey);
         return entries
             .Where(e => e.Value.HasValue)
-            .Select(e => JsonSerializer.Deserialize<CronJobState>(e.Value.ToString(), JsonOptions)!)
+            .Select(e => JsonSerializer.Deserialize(e.Value.ToString(), CacheRedisJsonContext.Default.CronJobState)!)
             .ToList();
     }
 
