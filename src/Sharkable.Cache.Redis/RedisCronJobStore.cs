@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using StackExchange.Redis;
 
@@ -5,10 +6,16 @@ namespace Sharkable.Cache.Redis;
 
 /// <summary>
 /// Redis-backed <see cref="ICronJobStore"/> with distributed locking
-/// via SETNX and state persistence via Hash.
+/// via <c>SETNX</c> with per-acquire fencing tokens and check-and-delete
+/// release (Lua); state persistence via Hash.
 /// </summary>
 public sealed class RedisCronJobStore : ICronJobStore
 {
+    private static readonly LuaScript LockReleaseScript = LuaScript.Prepare(
+        "if redis.call('GET', @key) == @token then " +
+        "return redis.call('DEL', @key) " +
+        "else return 0 end");
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
@@ -18,6 +25,8 @@ public sealed class RedisCronJobStore : ICronJobStore
     private readonly IDatabase _db;
     private readonly string _lockPrefix;
     private readonly string _stateKey;
+
+    private readonly ConcurrentDictionary<string, string> _lockTokens = new();
 
     public RedisCronJobStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions()) { }
@@ -29,13 +38,44 @@ public sealed class RedisCronJobStore : ICronJobStore
         _stateKey = options.CronStateKey;
     }
 
-    public Task<bool> TryAcquireJobLockAsync(string jobName, TimeSpan ttl)
-        => _db.StringSetAsync(_lockPrefix + jobName, Environment.MachineName, ttl, When.NotExists);
-
-    public Task ReleaseJobLockAsync(string jobName)
+    /// <summary>
+    /// Acquires the cron job's distributed lock, generating a fresh per-acquire
+    /// fencing token. The token is stored locally so the matching
+    /// <see cref="ReleaseJobLockAsync"/> only deletes the lock if the stored
+    /// value still matches, preventing an instance whose lock TTL expired
+    /// mid-execution from deleting a lock now held by another instance.
+    /// </summary>
+    /// <param name="jobName">Unique cron job identifier.</param>
+    /// <param name="ttl">Lock time-to-live.</param>
+    /// <returns><c>true</c> if the lock was acquired; <c>false</c> otherwise.</returns>
+    public async Task<bool> TryAcquireJobLockAsync(string jobName, TimeSpan ttl)
     {
-        _db.KeyDelete(_lockPrefix + jobName);
-        return Task.CompletedTask;
+        var token = Guid.NewGuid().ToString("N");
+        var acquired = await _db.StringSetAsync(
+            _lockPrefix + jobName, token, ttl, When.NotExists);
+        if (acquired)
+        {
+            _lockTokens[jobName] = token;
+        }
+        return acquired;
+    }
+
+    /// <summary>
+    /// Releases the cron job's distributed lock using a check-and-delete Lua
+    /// script: only deletes the lock key if the stored value matches the token
+    /// captured at acquire time.
+    /// </summary>
+    /// <param name="jobName">Unique cron job identifier.</param>
+    public async Task ReleaseJobLockAsync(string jobName)
+    {
+        if (!_lockTokens.TryRemove(jobName, out var token))
+        {
+            return;
+        }
+
+        await _db.ScriptEvaluateAsync(
+            LockReleaseScript,
+            new { key = (RedisKey)(_lockPrefix + jobName), token = (RedisValue)token });
     }
 
     public async Task SaveStateAsync(string jobName, CronJobState state)
