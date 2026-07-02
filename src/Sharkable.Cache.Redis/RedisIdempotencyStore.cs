@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.Extensions.Logging;
 using StackExchange.Redis;
 
 namespace Sharkable.Cache.Redis;
@@ -20,14 +21,28 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
 
     private readonly IDatabase _db;
     private readonly string _keyPrefix;
+    private readonly ILogger<RedisIdempotencyStore>? _logger;
 
     public RedisIdempotencyStore(IConnectionMultiplexer multiplexer)
-        : this(multiplexer, new RedisStoreOptions()) { }
+        : this(multiplexer, new RedisStoreOptions(), null) { }
 
     public RedisIdempotencyStore(IConnectionMultiplexer multiplexer, RedisStoreOptions options)
+        : this(multiplexer, options, null) { }
+
+    /// <summary>
+    /// Creates a new <see cref="RedisIdempotencyStore"/> with explicit logger injection.
+    /// </summary>
+    /// <param name="multiplexer">The Redis connection multiplexer.</param>
+    /// <param name="options">Store options.</param>
+    /// <param name="logger">Logger for diagnostics; optional.</param>
+    public RedisIdempotencyStore(
+        IConnectionMultiplexer multiplexer,
+        RedisStoreOptions options,
+        ILogger<RedisIdempotencyStore>? logger)
     {
         _db = multiplexer.GetDatabase(options.Database);
         _keyPrefix = options.IdempotencyKeyPrefix;
+        _logger = logger;
     }
 
     /// <inheritdoc />
@@ -38,6 +53,14 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// On JSON-deserialization failure the underlying exception is logged
+    /// and re-thrown rather than silently swallowed. The host's exception
+    /// handler middleware (<c>UseSharkExceptionHandler</c>) converts this
+    /// into a <c>500</c> response, ensuring the downstream handler is
+    /// <em>not</em> re-executed on a corrupted idempotency record — this
+    /// prevents double-charge scenarios on payment-style endpoints.
+    /// </remarks>
     public async Task<IdempotencyLookup?> GetAsync(string key)
     {
         var value = await _db.StringGetAsync(_keyPrefix + key);
@@ -52,9 +75,16 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
             var record = JsonSerializer.Deserialize<IdempotencyRecord>((string)value!, JsonOptions);
             return record is not null ? new IdempotencyHit(record) : null;
         }
-        catch
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
-            return null;
+            _logger?.LogWarning(
+                ex,
+                "Corrupted idempotency record at key {Key}; failing closed to prevent re-execution.",
+                _keyPrefix + key);
+            throw new InvalidOperationException(
+                $"Corrupted idempotency record at key '{_keyPrefix + key}'. " +
+                "Refusing to re-execute downstream handler.",
+                ex);
         }
     }
 
