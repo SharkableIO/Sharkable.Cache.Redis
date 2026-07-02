@@ -65,6 +65,21 @@ public sealed class RedisStoreOptions
     public TimeSpan SagaProgressTtl { get; set; } = TimeSpan.FromDays(7);
 
     /// <summary>
+    /// TTL applied to the cron-state hash (<see cref="CronStateKey"/>) on every
+    /// <c>SaveStateAsync</c> call. Bounds orphan-state accumulation: a hash key
+    /// whose host stopped writing (deregistered jobs, decommissioned tenants)
+    /// expires after this window instead of growing forever. Default: 30 days.
+    /// <para>
+    /// Individual hash fields cannot be expired independently with the
+    /// non-deprecated <see cref="StackExchange.Redis.IDatabase"/> API across
+    /// all supported Redis versions, so the entire hash key carries the TTL.
+    /// State is rebuilt on the next cron tick for each registered job, so a
+    /// short window is safe.
+    /// </para>
+    /// </summary>
+    public TimeSpan CronStateTtl { get; set; } = TimeSpan.FromDays(30);
+
+    /// <summary>
     /// Validates all key-prefix properties in this instance. Called by
     /// <c>AddSharkableRedis</c> after the configuration callback runs so that
     /// malformed prefixes fail at startup with a clear error rather than

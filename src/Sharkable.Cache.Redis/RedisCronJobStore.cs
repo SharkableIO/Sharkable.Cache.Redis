@@ -46,6 +46,7 @@ public sealed class RedisCronJobStore : ICronJobStore
     private readonly IDatabase _db;
     private readonly string _lockPrefix;
     private readonly string _stateKey;
+    private readonly TimeSpan _stateTtl;
 
     public RedisCronJobStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions()) { }
@@ -55,6 +56,7 @@ public sealed class RedisCronJobStore : ICronJobStore
         _db = multiplexer.GetDatabase(options.Database);
         _lockPrefix = options.CronLockPrefix;
         _stateKey = options.CronStateKey;
+        _stateTtl = options.CronStateTtl;
     }
 
     /// <summary>
@@ -142,10 +144,20 @@ public sealed class RedisCronJobStore : ICronJobStore
         }
     }
 
+    /// <summary>
+    /// Persists runtime state for a cron job and refreshes the parent hash key's
+    /// TTL to <see cref="RedisStoreOptions.CronStateTtl"/> so that abandoned
+    /// state (jobs that stop running due to deployment / deregistration)
+    /// eventually expires instead of growing the hash indefinitely.
+    /// </summary>
     public async Task SaveStateAsync(string jobName, CronJobState state)
     {
         var json = JsonSerializer.Serialize(state, JsonOptions);
-        await _db.HashSetAsync(_stateKey, jobName, json);
+        var batch = _db.CreateBatch();
+        var hashTask = batch.HashSetAsync(_stateKey, jobName, json);
+        var expireTask = batch.KeyExpireAsync(_stateKey, _stateTtl);
+        batch.Execute();
+        await Task.WhenAll(hashTask, expireTask);
     }
 
     public async Task<CronJobState?> LoadStateAsync(string jobName)
