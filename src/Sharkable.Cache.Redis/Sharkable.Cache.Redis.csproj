@@ -29,7 +29,7 @@
 
   <ItemGroup>
     <ProjectReference Include="$(SharkablePath)" Condition="'$(SharkablePath)' != ''" />
-    <PackageReference Include="Sharkable" Version="0.5.3" Condition="'$(SharkablePath)' == ''" />
+    <PackageReference Include="Sharkable" Version="0.5.5" Condition="'$(SharkablePath)' == ''" />
   </ItemGroup>
 
   <ItemGroup>
