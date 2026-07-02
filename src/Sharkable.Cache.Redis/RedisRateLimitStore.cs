@@ -30,8 +30,21 @@ return count";
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Rejects <see cref="TimeSpan.Zero"/> and negative windows so the underlying
+    /// Lua script never receives <c>EXPIRE key 0</c> (immediate delete) or a
+    /// negative TTL (also immediate delete in Redis), which would silently
+    /// disable rate limiting.
+    /// </remarks>
     public async Task<long> IncrementAsync(string key, TimeSpan window)
     {
+        if (window <= TimeSpan.Zero)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(window),
+                "Rate limit window must be positive; zero or negative windows would delete the counter immediately.");
+        }
+
         var redisKey = new RedisKey(_keyPrefix + key);
         var ttlSeconds = (long)Math.Ceiling(window.TotalSeconds);
         var result = await _db.ScriptEvaluateAsync(
