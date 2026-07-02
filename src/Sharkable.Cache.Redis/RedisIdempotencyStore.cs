@@ -8,16 +8,12 @@ namespace Sharkable.Cache.Redis;
 /// Redis-backed <see cref="IIdempotencyStore"/> using <see cref="StackExchange.Redis"/>.
 /// Keys are prefixed with configurable prefix (default <c>sharkable:idempotency:</c>).
 /// In-flight slots store the string <c>"IN_FLIGHT"</c>; completed records store
-/// the JSON-serialized <see cref="IdempotencyRecord"/>.
+/// the JSON-serialized <see cref="IdempotencyRecord"/> (via the AOT-safe
+/// <see cref="CacheRedisJsonContext"/>).
 /// </summary>
 public sealed class RedisIdempotencyStore : IIdempotencyStore
 {
     private const string InFlightMarker = "IN_FLIGHT";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
 
     private readonly IDatabase _db;
     private readonly string _keyPrefix;
@@ -72,8 +68,21 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
 
         try
         {
-            var record = JsonSerializer.Deserialize<IdempotencyRecord>((string)value!, JsonOptions);
-            return record is not null ? new IdempotencyHit(record) : null;
+            var payload = JsonSerializer.Deserialize(
+                (string)value!,
+                CacheRedisJsonContext.Default.CacheRedisIdempotencyPayload);
+            if (payload is null)
+            {
+                return null;
+            }
+            var record = new IdempotencyRecord(
+                payload.Key,
+                payload.Fingerprint,
+                payload.StatusCode,
+                payload.ContentType,
+                payload.Body,
+                payload.CompletedAt);
+            return new IdempotencyHit(record);
         }
         catch (Exception ex) when (ex is JsonException or InvalidOperationException)
         {
@@ -91,7 +100,16 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     /// <inheritdoc />
     public async Task StoreAsync(string key, IdempotencyRecord record, TimeSpan ttl)
     {
-        var json = JsonSerializer.Serialize(record, JsonOptions);
+        var payload = new CacheRedisIdempotencyPayload(
+            record.Key,
+            record.Fingerprint,
+            record.StatusCode,
+            record.ContentType,
+            record.Body.ToArray(),
+            record.CompletedAt);
+        var json = JsonSerializer.Serialize(
+            payload,
+            CacheRedisJsonContext.Default.CacheRedisIdempotencyPayload);
         await _db.StringSetAsync(_keyPrefix + key, json, ttl);
     }
 
