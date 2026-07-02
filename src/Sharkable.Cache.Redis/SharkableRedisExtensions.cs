@@ -21,9 +21,11 @@ public static class SharkableRedisExtensions
     /// Thrown when <paramref name="connectionString"/> is null or whitespace.
     /// </exception>
     /// <remarks>
-    /// Defaults applied if not present in the connection string:
+    /// Defaults applied only when not already present in the connection string:
     /// <c>abortConnect=false</c> so the multiplexer keeps reconnecting instead
     /// of crashing the host when Redis is briefly unavailable at startup.
+    /// An explicit <c>abortConnect=true</c> in <paramref name="connectionString"/>
+    /// is respected and never silently downgraded.
     /// Set <see cref="RedisStoreOptions.RequireTls"/> in <paramref name="configure"/>
     /// to enforce TLS (<c>ssl=true</c>) on the resulting connection.
     /// <para>
@@ -48,9 +50,8 @@ public static class SharkableRedisExtensions
 
         var config = ConfigurationOptions.Parse(connectionString);
 
-        var hadAbortConnect = config.AbortOnConnectFail;
         var hadSsl = config.Ssl;
-        if (hadAbortConnect)
+        if (!ConnectionStringHasKey(connectionString, "abortConnect"))
         {
             config.AbortOnConnectFail = false;
         }
@@ -63,7 +64,7 @@ public static class SharkableRedisExtensions
         var logger = loggerFactory?.CreateLogger("Sharkable.Cache.Redis.AddSharkableRedis");
         logger?.LogInformation(
             "Connecting to Redis (abortConnect={Abort}, ssl={Ssl}, requireTls={RequireTls}).",
-            !hadAbortConnect, config.Ssl, options.RequireTls);
+            config.AbortOnConnectFail, config.Ssl, options.RequireTls);
 
         var multiplexer = ConnectionMultiplexer.Connect(config);
         return services.AddSharkableRedis(multiplexer, configure);
@@ -118,5 +119,32 @@ public static class SharkableRedisExtensions
 
         var multiplexer = ConnectionMultiplexer.Connect(configuration);
         return services.AddSharkableRedis(multiplexer, configure);
+    }
+
+    /// <summary>
+    /// Returns <c>true</c> if the connection string contains the given
+    /// configuration key. Used to detect whether the user explicitly set
+    /// a value (so we don't silently override their choice). Comparison is
+    /// case-insensitive and matches keys as full segments separated by
+    /// <c>,</c> with optional surrounding whitespace.
+    /// </summary>
+    /// <param name="connectionString">The raw Redis connection string.</param>
+    /// <param name="key">The configuration key to look for (e.g. <c>"abortConnect"</c>).</param>
+    private static bool ConnectionStringHasKey(string connectionString, string key)
+    {
+        foreach (var part in connectionString.Split(','))
+        {
+            var trimmed = part.AsSpan().Trim();
+            var eq = trimmed.IndexOf('=');
+            if (eq <= 0)
+            {
+                continue;
+            }
+            if (trimmed[..eq].Equals(key.AsSpan(), StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+        return false;
     }
 }
