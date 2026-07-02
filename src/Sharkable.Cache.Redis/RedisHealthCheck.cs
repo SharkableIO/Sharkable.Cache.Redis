@@ -33,6 +33,11 @@ public sealed class RedisHealthCheck : IHealthCheck
     /// Returns generic status to public <c>/healthz</c>; see logs for details.
     /// The healthy payload exposes only a latency measurement and an endpoint
     /// count — never addresses, host names, or exception messages.
+    /// <para>
+    /// The <c>PingAsync</c> call is bounded by a 3-second timeout so a
+    /// misconfigured <c>syncTimeout = 0</c> cannot make this health check
+    /// hang indefinitely and degrade the <c>/healthz</c> probe.
+    /// </para>
     /// </remarks>
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
@@ -42,8 +47,18 @@ public sealed class RedisHealthCheck : IHealthCheck
         {
             var db = _multiplexer.GetDatabase();
             var sw = System.Diagnostics.Stopwatch.StartNew();
-            await db.PingAsync();
+            var pingTask = db.PingAsync();
+            var timeoutTask = Task.Delay(TimeSpan.FromSeconds(3), cancellationToken);
+            var winner = await Task.WhenAny(pingTask, timeoutTask).ConfigureAwait(false);
             sw.Stop();
+
+            if (winner == timeoutTask)
+            {
+                _logger.LogWarning("Redis health check PingAsync exceeded 3s timeout; reporting unhealthy.");
+                return HealthCheckResult.Unhealthy("Redis unreachable");
+            }
+
+            await pingTask.ConfigureAwait(false);
 
             var endpointCount = _multiplexer.GetEndPoints().Length;
             return HealthCheckResult.Healthy(
