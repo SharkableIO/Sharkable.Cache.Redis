@@ -42,9 +42,11 @@ public sealed class RedisCronJobStore : ICronJobStore
     private readonly string _stateKey;
     private readonly TimeSpan _stateTtl;
 
+    /// <summary>Creates a store with default <see cref="RedisStoreOptions"/>.</summary>
     public RedisCronJobStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions()) { }
 
+    /// <summary>Creates a store with the given options.</summary>
     public RedisCronJobStore(IConnectionMultiplexer multiplexer, RedisStoreOptions options)
     {
         _db = multiplexer.GetDatabase(options.Database);
@@ -154,6 +156,7 @@ public sealed class RedisCronJobStore : ICronJobStore
         await Task.WhenAll(hashTask, expireTask);
     }
 
+    /// <summary>Loads the runtime state for a cron job, or <c>null</c> if not found.</summary>
     public async Task<CronJobState?> LoadStateAsync(string jobName)
     {
         var json = await _db.HashGetAsync(_stateKey, jobName);
@@ -162,6 +165,7 @@ public sealed class RedisCronJobStore : ICronJobStore
             : null;
     }
 
+    /// <summary>Returns the state of all tracked cron jobs.</summary>
     public async Task<IReadOnlyList<CronJobState>> ListStatesAsync()
     {
         var entries = await _db.HashGetAllAsync(_stateKey);

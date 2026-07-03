@@ -41,9 +41,11 @@ public sealed class RedisSagaStore : ISagaStore
     private readonly string _progressPrefix;
     private readonly TimeSpan _progressTtl;
 
+    /// <summary>Creates a store with default <see cref="RedisStoreOptions"/>.</summary>
     public RedisSagaStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions()) { }
 
+    /// <summary>Creates a store with the given options.</summary>
     public RedisSagaStore(IConnectionMultiplexer multiplexer, RedisStoreOptions options)
     {
         _db = multiplexer.GetDatabase(options.Database);
@@ -92,7 +94,7 @@ public sealed class RedisSagaStore : ISagaStore
     /// Atomically extends the lock TTL only if the stored value still matches
     /// the token captured at acquire time. If the lock has been taken over by
     /// another instance, the local token record is cleared so subsequent
-    /// release/renew calls become no-ops. <see cref="MemoryCache.Get"/> also
+    /// release/renew calls become no-ops. <see cref="MemoryCache.TryGetValue"/> also
     /// resets the sliding expiration on the token entry so a frequently
     /// renewed saga never loses its token. Non-positive <paramref name="ttl"/>
     /// is silently treated as a no-op to match the documented contract.

@@ -19,9 +19,11 @@ public sealed class RedisIdempotencyStore : IIdempotencyStore
     private readonly string _keyPrefix;
     private readonly ILogger<RedisIdempotencyStore>? _logger;
 
+    /// <summary>Creates a store with default <see cref="RedisStoreOptions"/> and no logger.</summary>
     public RedisIdempotencyStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions(), null) { }
 
+    /// <summary>Creates a store with the given options and no logger.</summary>
     public RedisIdempotencyStore(IConnectionMultiplexer multiplexer, RedisStoreOptions options)
         : this(multiplexer, options, null) { }
 

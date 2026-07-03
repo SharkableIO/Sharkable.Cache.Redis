@@ -2,6 +2,15 @@
 
 All notable changes to Sharkable.Cache.Redis are documented here.
 
+## [Unreleased]
+
+## [0.5.6] — 2026-07-03
+
+### fix
+
+- Enable XML doc generation; add missing XML doc comments to all public API members — zero CS1591 warnings
+- Fix CS1574 unresolved cref references in XML docs
+
 ## [0.5.5] — 2026-07-03
 
 ### security

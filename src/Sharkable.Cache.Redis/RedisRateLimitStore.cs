@@ -20,9 +20,11 @@ return count";
     private readonly IDatabase _db;
     private readonly string _keyPrefix;
 
+    /// <summary>Creates a store with default <see cref="RedisStoreOptions"/>.</summary>
     public RedisRateLimitStore(IConnectionMultiplexer multiplexer)
         : this(multiplexer, new RedisStoreOptions()) { }
 
+    /// <summary>Creates a store with the given options.</summary>
     public RedisRateLimitStore(IConnectionMultiplexer multiplexer, RedisStoreOptions options)
     {
         _db = multiplexer.GetDatabase(options.Database);
